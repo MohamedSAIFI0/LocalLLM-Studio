@@ -1,6 +1,4 @@
-from pathlib import Path
-
-html = """<h1>Étude comparative : Llama 3.2 vs Qwen 0.5B</h1>
+<h1>Étude comparative : Llama 3.2 vs Qwen 0.5B</h1>
 
 <h2>1. Objectif de l'expérimentation</h2>
 <p>
@@ -125,8 +123,3 @@ principalement une exécution sur CPU.
 Pour une conclusion complète, il est recommandé de relever les mesures séparément pour chacune des
 cinq questions et de mesurer la RAM propre à chaque processus Ollama.
 </p>
-"""
-
-path = Path("/mnt/data/etude_comparative_llama_qwen_sans_css.html")
-path.write_text(html, encoding="utf-8")
-print(f"Fichier HTML sans CSS créé : {path}")
