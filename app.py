@@ -4,6 +4,8 @@ import json
 import uuid
 import re
 import time
+import subprocess
+import psutil
 import pandas as pd
 from datetime import datetime
 
@@ -11,6 +13,54 @@ st.set_page_config(page_title="ENSET Chatbot", layout="wide")
 st.title("ENSET Chatbot")
 
 available_models = ["llama3.2:latest", "qwen2.5:0.5b"]
+
+psutil.cpu_percent(interval=None)
+
+def get_gpu_info():
+    try:
+        flags = 0
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            flags = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total,name", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            creationflags=flags
+        )
+        if result.returncode == 0:
+            parts = [p.strip() for p in result.stdout.strip().split(",")]
+            if len(parts) >= 4:
+                return {
+                    "available": True,
+                    "name": parts[3],
+                    "gpu_util": float(parts[0]),
+                    "mem_used": float(parts[1]),
+                    "mem_total": float(parts[2]),
+                    "mem_percent": round((float(parts[1]) / float(parts[2])) * 100, 1) if float(parts[2]) > 0 else 0.0
+                }
+    except Exception:
+        pass
+    return {
+        "available": False,
+        "name": "N/A",
+        "gpu_util": 0.0,
+        "mem_used": 0.0,
+        "mem_total": 0.0,
+        "mem_percent": 0.0
+    }
+
+def get_hardware_usage():
+    cpu = psutil.cpu_percent(interval=None)
+    ram = psutil.virtual_memory()
+    gpu = get_gpu_info()
+    return {
+        "cpu_percent": round(cpu, 1),
+        "ram_percent": round(ram.percent, 1),
+        "ram_used_gb": round(ram.used / (1024 ** 3), 2),
+        "ram_total_gb": round(ram.total / (1024 ** 3), 2),
+        "gpu": gpu
+    }
 
 def init_conversation():
     new_id = str(uuid.uuid4())
@@ -165,7 +215,8 @@ if mode == "Chatbot":
             st.markdown(message["content"])
             if "metrics" in message:
                 m = message["metrics"]
-                st.caption(f"Temps de réponse: {m['total_time']}s | TTFT: {m['ttft']}s | Tokens: {m['tokens']} | Vitesse: {m['speed']} tokens/s")
+                gpu_text = f" | GPU: {m['gpu_util']}% ({m['gpu_mem']} Mo)" if m.get("gpu_util") is not None else ""
+                st.caption(f"Temps de réponse: {m['total_time']}s | TTFT: {m['ttft']}s | Tokens: {m['tokens']} | Vitesse: {m['speed']} tokens/s | CPU: {m['cpu']}% | RAM: {m['ram']}%{gpu_text}")
 
     prompt = st.chat_input("Que voulez-vous me demander ?")
 
@@ -184,6 +235,7 @@ if mode == "Chatbot":
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             full_response = ""
+            psutil.cpu_percent(interval=None)
             start_time = time.time()
             ttft = None
             eval_count = 0
@@ -217,14 +269,21 @@ if mode == "Chatbot":
                     eval_count = max(1, len(full_response.split()))
                 speed = eval_count / total_time if total_time > 0 else 0.0
 
+                hw_exec = get_hardware_usage()
+
                 message_placeholder.markdown(full_response)
                 metrics_data = {
                     "total_time": round(total_time, 2),
                     "ttft": round(ttft, 2),
                     "tokens": eval_count,
-                    "speed": round(speed, 2)
+                    "speed": round(speed, 2),
+                    "cpu": hw_exec["cpu_percent"],
+                    "ram": hw_exec["ram_percent"],
+                    "gpu_util": hw_exec["gpu"]["gpu_util"] if hw_exec["gpu"]["available"] else None,
+                    "gpu_mem": int(hw_exec["gpu"]["mem_used"]) if hw_exec["gpu"]["available"] else None
                 }
-                st.caption(f"Temps de réponse: {metrics_data['total_time']}s | TTFT: {metrics_data['ttft']}s | Tokens: {metrics_data['tokens']} | Vitesse: {metrics_data['speed']} tokens/s")
+                gpu_text = f" | GPU: {metrics_data['gpu_util']}% ({metrics_data['gpu_mem']} Mo)" if metrics_data["gpu_util"] is not None else ""
+                st.caption(f"Temps de réponse: {metrics_data['total_time']}s | TTFT: {metrics_data['ttft']}s | Tokens: {metrics_data['tokens']} | Vitesse: {metrics_data['speed']} tokens/s | CPU: {metrics_data['cpu']}% | RAM: {metrics_data['ram']}%{gpu_text}")
 
                 current_messages.append({
                     "role": "assistant",
@@ -307,31 +366,49 @@ else:
             st.markdown(f"**Modèle 2 : {item['model_2']}**")
             st.markdown(item['response_2'])
 
-        st.markdown("**Tableau comparatif des performances**")
+        st.markdown("**Tableau comparatif des performances et ressources**")
+        indicators = [
+            "Temps de réponse (s)",
+            "Temps premier token (TTFT) (s)",
+            "Nombre de tokens générés",
+            "Vitesse de génération (tokens/s)",
+            "Taux d'utilisation CPU (%)",
+            "Utilisation RAM (%)"
+        ]
+        vals_1 = [
+            f"{item['metrics_1']['total_time']:.2f}",
+            f"{item['metrics_1']['ttft']:.2f}",
+            item['metrics_1']['tokens'],
+            f"{item['metrics_1']['speed']:.2f}",
+            f"{item['metrics_1']['cpu']:.1f}",
+            f"{item['metrics_1']['ram']:.1f}"
+        ]
+        vals_2 = [
+            f"{item['metrics_2']['total_time']:.2f}",
+            f"{item['metrics_2']['ttft']:.2f}",
+            item['metrics_2']['tokens'],
+            f"{item['metrics_2']['speed']:.2f}",
+            f"{item['metrics_2']['cpu']:.1f}",
+            f"{item['metrics_2']['ram']:.1f}"
+        ]
+
+        if item['metrics_1'].get('gpu_util') is not None or item['metrics_2'].get('gpu_util') is not None:
+            indicators.append("Utilisation GPU (%)")
+            indicators.append("Mémoire GPU utilisée (Mo)")
+            vals_1.append(f"{item['metrics_1'].get('gpu_util', 0.0):.1f}")
+            vals_1.append(f"{item['metrics_1'].get('gpu_mem', 0)}")
+            vals_2.append(f"{item['metrics_2'].get('gpu_util', 0.0):.1f}")
+            vals_2.append(f"{item['metrics_2'].get('gpu_mem', 0)}")
+
         df_metrics = pd.DataFrame({
-            "Indicateur": [
-                "Temps de réponse (s)",
-                "Temps premier token (TTFT) (s)",
-                "Nombre de tokens générés",
-                "Vitesse de génération (tokens/s)"
-            ],
-            f"Modèle 1 ({item['model_1']})": [
-                f"{item['metrics_1']['total_time']:.2f}",
-                f"{item['metrics_1']['ttft']:.2f}",
-                item['metrics_1']['tokens'],
-                f"{item['metrics_1']['speed']:.2f}"
-            ],
-            f"Modèle 2 ({item['model_2']})": [
-                f"{item['metrics_2']['total_time']:.2f}",
-                f"{item['metrics_2']['ttft']:.2f}",
-                item['metrics_2']['tokens'],
-                f"{item['metrics_2']['speed']:.2f}"
-            ]
+            "Indicateur": indicators,
+            f"Modèle 1 ({item['model_1']})": vals_1,
+            f"Modèle 2 ({item['model_2']})": vals_2
         })
         st.dataframe(df_metrics, use_container_width=True, hide_index=True)
 
-        st.markdown("**Analyse graphique des performances**")
-        col_g1, col_g2 = st.columns(2)
+        st.markdown("**Analyse graphique des performances et des ressources**")
+        col_g1, col_g2, col_g3 = st.columns(3)
         with col_g1:
             st.caption("Vitesse de génération (tokens/s)")
             chart_speed = pd.DataFrame({
@@ -341,13 +418,28 @@ else:
             st.bar_chart(chart_speed)
 
         with col_g2:
-            st.caption("Durées : Temps de réponse total et TTFT (secondes)")
+            st.caption("Durées : Temps total et TTFT (secondes)")
             chart_times = pd.DataFrame({
                 "Modèle": [f"Modèle 1 ({item['model_1']})", f"Modèle 2 ({item['model_2']})"],
                 "Temps total (s)": [item['metrics_1']['total_time'], item['metrics_2']['total_time']],
                 "TTFT (s)": [item['metrics_1']['ttft'], item['metrics_2']['ttft']]
             }).set_index("Modèle")
             st.bar_chart(chart_times)
+
+        with col_g3:
+            st.caption("Ressources matérielles utilisées (%)")
+            hw_chart_dict = {
+                "Modèle": [f"Modèle 1 ({item['model_1']})", f"Modèle 2 ({item['model_2']})"],
+                "CPU (%)": [item['metrics_1']['cpu'], item['metrics_2']['cpu']],
+                "RAM (%)": [item['metrics_1']['ram'], item['metrics_2']['ram']]
+            }
+            if item['metrics_1'].get('gpu_util') is not None or item['metrics_2'].get('gpu_util') is not None:
+                hw_chart_dict["GPU (%)"] = [
+                    item['metrics_1'].get('gpu_util', 0.0),
+                    item['metrics_2'].get('gpu_util', 0.0)
+                ]
+            chart_hw = pd.DataFrame(hw_chart_dict).set_index("Modèle")
+            st.bar_chart(chart_hw)
 
         st.markdown("---")
 
@@ -368,6 +460,7 @@ else:
             st.markdown(f"**Modèle 1 : {model_1}**")
             placeholder_1 = st.empty()
             full_resp_1 = ""
+            psutil.cpu_percent(interval=None)
             start_time_1 = time.time()
             ttft_1 = None
             eval_count_1 = 0
@@ -395,21 +488,28 @@ else:
                     eval_count_1 = max(1, len(full_resp_1.split()))
                 speed_1 = eval_count_1 / total_time_1 if total_time_1 > 0 else 0.0
 
+                hw_exec_1 = get_hardware_usage()
+
                 placeholder_1.markdown(full_resp_1)
                 metrics_1 = {
                     "total_time": round(total_time_1, 2),
                     "ttft": round(ttft_1, 2),
                     "tokens": eval_count_1,
-                    "speed": round(speed_1, 2)
+                    "speed": round(speed_1, 2),
+                    "cpu": hw_exec_1["cpu_percent"],
+                    "ram": hw_exec_1["ram_percent"],
+                    "gpu_util": hw_exec_1["gpu"]["gpu_util"] if hw_exec_1["gpu"]["available"] else None,
+                    "gpu_mem": int(hw_exec_1["gpu"]["mem_used"]) if hw_exec_1["gpu"]["available"] else None
                 }
             except Exception as e:
                 placeholder_1.error(f"Erreur {model_1} : {e}")
-                metrics_1 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0}
+                metrics_1 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0, "cpu": 0.0, "ram": 0.0, "gpu_util": None, "gpu_mem": None}
 
         with col2:
             st.markdown(f"**Modèle 2 : {model_2}**")
             placeholder_2 = st.empty()
             full_resp_2 = ""
+            psutil.cpu_percent(interval=None)
             start_time_2 = time.time()
             ttft_2 = None
             eval_count_2 = 0
@@ -437,16 +537,22 @@ else:
                     eval_count_2 = max(1, len(full_resp_2.split()))
                 speed_2 = eval_count_2 / total_time_2 if total_time_2 > 0 else 0.0
 
+                hw_exec_2 = get_hardware_usage()
+
                 placeholder_2.markdown(full_resp_2)
                 metrics_2 = {
                     "total_time": round(total_time_2, 2),
                     "ttft": round(ttft_2, 2),
                     "tokens": eval_count_2,
-                    "speed": round(speed_2, 2)
+                    "speed": round(speed_2, 2),
+                    "cpu": hw_exec_2["cpu_percent"],
+                    "ram": hw_exec_2["ram_percent"],
+                    "gpu_util": hw_exec_2["gpu"]["gpu_util"] if hw_exec_2["gpu"]["available"] else None,
+                    "gpu_mem": int(hw_exec_2["gpu"]["mem_used"]) if hw_exec_2["gpu"]["available"] else None
                 }
             except Exception as e:
                 placeholder_2.error(f"Erreur {model_2} : {e}")
-                metrics_2 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0}
+                metrics_2 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0, "cpu": 0.0, "ram": 0.0, "gpu_util": None, "gpu_mem": None}
 
         st.session_state.comparison_history.append({
             "prompt": prompt,
@@ -458,3 +564,35 @@ else:
             "metrics_2": metrics_2
         })
         st.rerun()
+
+st.sidebar.markdown("---")
+st.sidebar.header("Surveillance des ressources matérielles")
+
+hw = get_hardware_usage()
+
+st.sidebar.metric("Taux d'utilisation CPU", f"{hw['cpu_percent']} %")
+st.sidebar.progress(min(max(hw['cpu_percent'] / 100.0, 0.0), 1.0))
+
+st.sidebar.metric(
+    "Utilisation RAM",
+    f"{hw['ram_percent']} %",
+    f"{hw['ram_used_gb']} / {hw['ram_total_gb']} Go"
+)
+st.sidebar.progress(min(max(hw['ram_percent'] / 100.0, 0.0), 1.0))
+
+if hw['gpu']['available']:
+    st.sidebar.metric(
+        f"Utilisation GPU ({hw['gpu']['name']})",
+        f"{hw['gpu']['gpu_util']} %"
+    )
+    st.sidebar.metric(
+        "Mémoire GPU (VRAM)",
+        f"{hw['gpu']['mem_percent']} %",
+        f"{int(hw['gpu']['mem_used'])} / {int(hw['gpu']['mem_total'])} Mo"
+    )
+    st.sidebar.progress(min(max(hw['gpu']['mem_percent'] / 100.0, 0.0), 1.0))
+else:
+    st.sidebar.text("GPU non disponible")
+
+if st.sidebar.button("Actualiser les ressources", use_container_width=True):
+    st.rerun()
