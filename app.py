@@ -12,9 +12,35 @@ from datetime import datetime
 st.set_page_config(page_title="ENSET Chatbot", layout="wide")
 st.title("ENSET Chatbot")
 
-available_models = ["llama3.2:latest", "qwen2.5:0.5b"]
-
 psutil.cpu_percent(interval=None)
+
+def check_ollama_status():
+    try:
+        response = ollama.list()
+        models = []
+        model_list = []
+        if hasattr(response, "models"):
+            model_list = response.models
+        elif isinstance(response, dict):
+            model_list = response.get("models", [])
+        for m in model_list:
+            if hasattr(m, "model"):
+                models.append(m.model)
+            elif isinstance(m, dict):
+                models.append(m.get("model") or m.get("name"))
+        models = [m for m in models if m]
+        if models:
+            return True, models, "Service en ligne et modèles détectés"
+        return True, [], "Service en ligne mais aucun modèle installé"
+    except Exception as e:
+        return False, [], str(e)
+
+is_ollama_online, detected_models, status_message = check_ollama_status()
+
+if is_ollama_online and detected_models:
+    available_models = detected_models
+else:
+    available_models = ["llama3.2:latest", "qwen2.5:0.5b"]
 
 def get_gpu_info():
     try:
@@ -88,12 +114,26 @@ if st.session_state.current_conv_id not in st.session_state.conversations:
         st.session_state.conversations[new_id] = new_conv
         st.session_state.current_conv_id = new_id
 
+st.sidebar.header("Navigation")
+
+if is_ollama_online:
+    st.sidebar.success(f"Ollama en ligne ({len(detected_models)} modèle(s) détecté(s))")
+else:
+    st.sidebar.error("Ollama hors ligne")
+
 mode = st.sidebar.radio(
     "Mode de fonctionnement",
-    ["Chatbot", "Comparaison des modèles"]
+    ["Mode Conversation", "Mode Comparaison des modèles"]
 )
 
-if mode == "Chatbot":
+if not is_ollama_online:
+    st.error("Le service Ollama est actuellement inaccessible. Veuillez vous assurer qu'Ollama est démarré sur votre machine (exécutez 'ollama serve' dans un terminal).")
+    if st.button("Vérifier à nouveau la connexion"):
+        st.rerun()
+elif not detected_models:
+    st.warning("Le service Ollama est actif mais aucun modèle n'a été détecté. Téléchargez un modèle avec 'ollama pull <nom_du_modele>' dans votre terminal.")
+
+if mode == "Mode Conversation":
     st.sidebar.markdown("---")
     st.sidebar.header("Gestion des conversations")
 
@@ -209,6 +249,7 @@ if mode == "Chatbot":
     )
 
     st.subheader(current_conv['title'])
+    st.caption("Discussion interactive avec le modèle sélectionné")
 
     for message in current_messages:
         with st.chat_message(message["role"]):
@@ -240,62 +281,68 @@ if mode == "Chatbot":
             ttft = None
             eval_count = 0
 
-            try:
-                for response in ollama.chat(
-                    model=selected_model,
-                    messages=current_messages,
-                    options={
-                        "temperature": temperature,
-                        "top_k": top_k,
-                        "top_p": top_p,
-                        "num_predict": max_tokens,
-                    },
-                    stream=True
-                ):
-                    chunk = response.get("message", {}).get("content", "")
-                    if chunk:
-                        if ttft is None:
-                            ttft = time.time() - start_time
-                        full_response += chunk
-                        message_placeholder.markdown(full_response)
-                    if response.get("done") and response.get("eval_count") is not None:
-                        eval_count = response.get("eval_count")
+            with st.spinner("Génération de la réponse en cours..."):
+                try:
+                    for response in ollama.chat(
+                        model=selected_model,
+                        messages=current_messages,
+                        options={
+                            "temperature": temperature,
+                            "top_k": top_k,
+                            "top_p": top_p,
+                            "num_predict": max_tokens,
+                        },
+                        stream=True
+                    ):
+                        chunk = response.get("message", {}).get("content", "")
+                        if chunk:
+                            if ttft is None:
+                                ttft = time.time() - start_time
+                            full_response += chunk
+                            message_placeholder.markdown(full_response)
+                        if response.get("done") and response.get("eval_count") is not None:
+                            eval_count = response.get("eval_count")
 
-                end_time = time.time()
-                total_time = end_time - start_time
-                if ttft is None:
-                    ttft = total_time
-                if eval_count == 0:
-                    eval_count = max(1, len(full_response.split()))
-                speed = eval_count / total_time if total_time > 0 else 0.0
+                    end_time = time.time()
+                    total_time = end_time - start_time
+                    if ttft is None:
+                        ttft = total_time
+                    if eval_count == 0:
+                        eval_count = max(1, len(full_response.split()))
+                    speed = eval_count / total_time if total_time > 0 else 0.0
 
-                hw_exec = get_hardware_usage()
+                    hw_exec = get_hardware_usage()
 
-                message_placeholder.markdown(full_response)
-                metrics_data = {
-                    "total_time": round(total_time, 2),
-                    "ttft": round(ttft, 2),
-                    "tokens": eval_count,
-                    "speed": round(speed, 2),
-                    "cpu": hw_exec["cpu_percent"],
-                    "ram": hw_exec["ram_percent"],
-                    "gpu_util": hw_exec["gpu"]["gpu_util"] if hw_exec["gpu"]["available"] else None,
-                    "gpu_mem": int(hw_exec["gpu"]["mem_used"]) if hw_exec["gpu"]["available"] else None
-                }
-                gpu_text = f" | GPU: {metrics_data['gpu_util']}% ({metrics_data['gpu_mem']} Mo)" if metrics_data["gpu_util"] is not None else ""
-                st.caption(f"Temps de réponse: {metrics_data['total_time']}s | TTFT: {metrics_data['ttft']}s | Tokens: {metrics_data['tokens']} | Vitesse: {metrics_data['speed']} tokens/s | CPU: {metrics_data['cpu']}% | RAM: {metrics_data['ram']}%{gpu_text}")
+                    message_placeholder.markdown(full_response)
+                    metrics_data = {
+                        "total_time": round(total_time, 2),
+                        "ttft": round(ttft, 2),
+                        "tokens": eval_count,
+                        "speed": round(speed, 2),
+                        "cpu": hw_exec["cpu_percent"],
+                        "ram": hw_exec["ram_percent"],
+                        "gpu_util": hw_exec["gpu"]["gpu_util"] if hw_exec["gpu"]["available"] else None,
+                        "gpu_mem": int(hw_exec["gpu"]["mem_used"]) if hw_exec["gpu"]["available"] else None
+                    }
+                    gpu_text = f" | GPU: {metrics_data['gpu_util']}% ({metrics_data['gpu_mem']} Mo)" if metrics_data["gpu_util"] is not None else ""
+                    st.caption(f"Temps de réponse: {metrics_data['total_time']}s | TTFT: {metrics_data['ttft']}s | Tokens: {metrics_data['tokens']} | Vitesse: {metrics_data['speed']} tokens/s | CPU: {metrics_data['cpu']}% | RAM: {metrics_data['ram']}%{gpu_text}")
 
-                current_messages.append({
-                    "role": "assistant",
-                    "content": full_response,
-                    "metrics": metrics_data
-                })
+                    current_messages.append({
+                        "role": "assistant",
+                        "content": full_response,
+                        "metrics": metrics_data
+                    })
 
-            except Exception as e:
-                st.error(f"Erreur Ollama : {e}")
+                except Exception as e:
+                    err_msg = str(e)
+                    if "ConnectError" in type(e).__name__ or "10013" in err_msg or "10061" in err_msg:
+                        message_placeholder.error("Erreur de connexion : le service Ollama est inaccessible ou ne répond pas. Veuillez vérifier qu'Ollama est démarré.")
+                    else:
+                        message_placeholder.error(f"Erreur lors de la génération avec le modèle {selected_model} : {e}")
 
 else:
     st.subheader("Comparaison des modèles")
+    st.caption("Évaluez deux modèles côte à côte avec des paramètres rigoureusement identiques")
 
     st.sidebar.markdown("---")
     st.sidebar.header("Paramètres de génération")
@@ -464,46 +511,51 @@ else:
             start_time_1 = time.time()
             ttft_1 = None
             eval_count_1 = 0
-            try:
-                for response in ollama.chat(
-                    model=model_1,
-                    messages=[{"role": "user", "content": prompt}],
-                    options=shared_options,
-                    stream=True
-                ):
-                    chunk = response.get("message", {}).get("content", "")
-                    if chunk:
-                        if ttft_1 is None:
-                            ttft_1 = time.time() - start_time_1
-                        full_resp_1 += chunk
-                        placeholder_1.markdown(full_resp_1)
-                    if response.get("done") and response.get("eval_count") is not None:
-                        eval_count_1 = response.get("eval_count")
+            with st.spinner(f"Génération en cours avec {model_1}..."):
+                try:
+                    for response in ollama.chat(
+                        model=model_1,
+                        messages=[{"role": "user", "content": prompt}],
+                        options=shared_options,
+                        stream=True
+                    ):
+                        chunk = response.get("message", {}).get("content", "")
+                        if chunk:
+                            if ttft_1 is None:
+                                ttft_1 = time.time() - start_time_1
+                            full_resp_1 += chunk
+                            placeholder_1.markdown(full_resp_1)
+                        if response.get("done") and response.get("eval_count") is not None:
+                            eval_count_1 = response.get("eval_count")
 
-                end_time_1 = time.time()
-                total_time_1 = end_time_1 - start_time_1
-                if ttft_1 is None:
-                    ttft_1 = total_time_1
-                if eval_count_1 == 0:
-                    eval_count_1 = max(1, len(full_resp_1.split()))
-                speed_1 = eval_count_1 / total_time_1 if total_time_1 > 0 else 0.0
+                    end_time_1 = time.time()
+                    total_time_1 = end_time_1 - start_time_1
+                    if ttft_1 is None:
+                        ttft_1 = total_time_1
+                    if eval_count_1 == 0:
+                        eval_count_1 = max(1, len(full_resp_1.split()))
+                    speed_1 = eval_count_1 / total_time_1 if total_time_1 > 0 else 0.0
 
-                hw_exec_1 = get_hardware_usage()
+                    hw_exec_1 = get_hardware_usage()
 
-                placeholder_1.markdown(full_resp_1)
-                metrics_1 = {
-                    "total_time": round(total_time_1, 2),
-                    "ttft": round(ttft_1, 2),
-                    "tokens": eval_count_1,
-                    "speed": round(speed_1, 2),
-                    "cpu": hw_exec_1["cpu_percent"],
-                    "ram": hw_exec_1["ram_percent"],
-                    "gpu_util": hw_exec_1["gpu"]["gpu_util"] if hw_exec_1["gpu"]["available"] else None,
-                    "gpu_mem": int(hw_exec_1["gpu"]["mem_used"]) if hw_exec_1["gpu"]["available"] else None
-                }
-            except Exception as e:
-                placeholder_1.error(f"Erreur {model_1} : {e}")
-                metrics_1 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0, "cpu": 0.0, "ram": 0.0, "gpu_util": None, "gpu_mem": None}
+                    placeholder_1.markdown(full_resp_1)
+                    metrics_1 = {
+                        "total_time": round(total_time_1, 2),
+                        "ttft": round(ttft_1, 2),
+                        "tokens": eval_count_1,
+                        "speed": round(speed_1, 2),
+                        "cpu": hw_exec_1["cpu_percent"],
+                        "ram": hw_exec_1["ram_percent"],
+                        "gpu_util": hw_exec_1["gpu"]["gpu_util"] if hw_exec_1["gpu"]["available"] else None,
+                        "gpu_mem": int(hw_exec_1["gpu"]["mem_used"]) if hw_exec_1["gpu"]["available"] else None
+                    }
+                except Exception as e:
+                    err_msg = str(e)
+                    if "ConnectError" in type(e).__name__ or "10013" in err_msg or "10061" in err_msg:
+                        placeholder_1.error("Erreur de connexion : le service Ollama est inaccessible.")
+                    else:
+                        placeholder_1.error(f"Erreur {model_1} : {e}")
+                    metrics_1 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0, "cpu": 0.0, "ram": 0.0, "gpu_util": None, "gpu_mem": None}
 
         with col2:
             st.markdown(f"**Modèle 2 : {model_2}**")
@@ -513,46 +565,51 @@ else:
             start_time_2 = time.time()
             ttft_2 = None
             eval_count_2 = 0
-            try:
-                for response in ollama.chat(
-                    model=model_2,
-                    messages=[{"role": "user", "content": prompt}],
-                    options=shared_options,
-                    stream=True
-                ):
-                    chunk = response.get("message", {}).get("content", "")
-                    if chunk:
-                        if ttft_2 is None:
-                            ttft_2 = time.time() - start_time_2
-                        full_resp_2 += chunk
-                        placeholder_2.markdown(full_resp_2)
-                    if response.get("done") and response.get("eval_count") is not None:
-                        eval_count_2 = response.get("eval_count")
+            with st.spinner(f"Génération en cours avec {model_2}..."):
+                try:
+                    for response in ollama.chat(
+                        model=model_2,
+                        messages=[{"role": "user", "content": prompt}],
+                        options=shared_options,
+                        stream=True
+                    ):
+                        chunk = response.get("message", {}).get("content", "")
+                        if chunk:
+                            if ttft_2 is None:
+                                ttft_2 = time.time() - start_time_2
+                            full_resp_2 += chunk
+                            placeholder_2.markdown(full_resp_2)
+                        if response.get("done") and response.get("eval_count") is not None:
+                            eval_count_2 = response.get("eval_count")
 
-                end_time_2 = time.time()
-                total_time_2 = end_time_2 - start_time_2
-                if ttft_2 is None:
-                    ttft_2 = total_time_2
-                if eval_count_2 == 0:
-                    eval_count_2 = max(1, len(full_resp_2.split()))
-                speed_2 = eval_count_2 / total_time_2 if total_time_2 > 0 else 0.0
+                    end_time_2 = time.time()
+                    total_time_2 = end_time_2 - start_time_2
+                    if ttft_2 is None:
+                        ttft_2 = total_time_2
+                    if eval_count_2 == 0:
+                        eval_count_2 = max(1, len(full_resp_2.split()))
+                    speed_2 = eval_count_2 / total_time_2 if total_time_2 > 0 else 0.0
 
-                hw_exec_2 = get_hardware_usage()
+                    hw_exec_2 = get_hardware_usage()
 
-                placeholder_2.markdown(full_resp_2)
-                metrics_2 = {
-                    "total_time": round(total_time_2, 2),
-                    "ttft": round(ttft_2, 2),
-                    "tokens": eval_count_2,
-                    "speed": round(speed_2, 2),
-                    "cpu": hw_exec_2["cpu_percent"],
-                    "ram": hw_exec_2["ram_percent"],
-                    "gpu_util": hw_exec_2["gpu"]["gpu_util"] if hw_exec_2["gpu"]["available"] else None,
-                    "gpu_mem": int(hw_exec_2["gpu"]["mem_used"]) if hw_exec_2["gpu"]["available"] else None
-                }
-            except Exception as e:
-                placeholder_2.error(f"Erreur {model_2} : {e}")
-                metrics_2 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0, "cpu": 0.0, "ram": 0.0, "gpu_util": None, "gpu_mem": None}
+                    placeholder_2.markdown(full_resp_2)
+                    metrics_2 = {
+                        "total_time": round(total_time_2, 2),
+                        "ttft": round(ttft_2, 2),
+                        "tokens": eval_count_2,
+                        "speed": round(speed_2, 2),
+                        "cpu": hw_exec_2["cpu_percent"],
+                        "ram": hw_exec_2["ram_percent"],
+                        "gpu_util": hw_exec_2["gpu"]["gpu_util"] if hw_exec_2["gpu"]["available"] else None,
+                        "gpu_mem": int(hw_exec_2["gpu"]["mem_used"]) if hw_exec_2["gpu"]["available"] else None
+                    }
+                except Exception as e:
+                    err_msg = str(e)
+                    if "ConnectError" in type(e).__name__ or "10013" in err_msg or "10061" in err_msg:
+                        placeholder_2.error("Erreur de connexion : le service Ollama est inaccessible.")
+                    else:
+                        placeholder_2.error(f"Erreur {model_2} : {e}")
+                    metrics_2 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0, "cpu": 0.0, "ram": 0.0, "gpu_util": None, "gpu_mem": None}
 
         st.session_state.comparison_history.append({
             "prompt": prompt,
