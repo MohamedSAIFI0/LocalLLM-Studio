@@ -94,6 +94,17 @@ Des mécanismes assurent la stabilité et le confort d'utilisation :
 
 ---
 
+## Architecture de l'application
+
+L'application repose sur une architecture simple autour d'un fichier principal `app.py` :
+
+* **Interface utilisateur (Streamlit) :** gère la barre latérale (navigation, sélection des modèles, paramètres d'inférence, gestion des conversations) et la zone principale (chat ou comparaison côte à côte).
+* **Gestion d'état (`st.session_state`) :** conserve les conversations actives, leur historique et les résultats de comparaison durant la session.
+* **Client LLM local (`ollama`) :** vérifie la disponibilité du service Ollama (`ollama.list()`), détecte les modèles installés et exécute la génération en streaming (`ollama.chat(..., stream=True)`).
+* **Suivi des performances et ressources (`time`, `psutil`, `nvidia-smi`) :** mesure le temps total, le TTFT, le nombre de tokens, la vitesse de génération et échantillonne le CPU, la RAM et le GPU pendant la génération.
+
+---
+
 ## 8. Installation et lancement de l'application
 
 1. Installer les dépendances Python :
@@ -130,18 +141,31 @@ Les deux modèles sont évalués à partir des mêmes questions :
 | Q2 | Raisonnement | Un train parcourt 120 km en 2 heures. Calculer sa vitesse moyenne et expliquer le raisonnement. |
 | Q3 | Génération de code | Écrire un programme Python qui vérifie si un nombre est premier. |
 | Q4 | Synthèse | Résumer en trois phrases le rôle de l'intelligence artificielle dans le domaine de la santé. |
-| Q5 | Traduction | Traduire en anglais une phrase portant sur l'automatisation et l'aide à la décision par l'IA. |
+| Q5 | Traduction | Traduire en anglais : « L'intelligence artificielle améliore l'automatisation des processus et facilite la prise de décision. » |
 
 **Environnement :** Windows, Ollama et Streamlit.
-**Matériel :** 31,71 Go de RAM et GPU NVIDIA T1200 Laptop avec 4 096 Mo de VRAM.
+**Matériel :** CPU *(à préciser : modèle et nombre de cœurs)*, 31,71 Go de RAM et GPU NVIDIA T1200 Laptop avec 4 096 Mo de VRAM.
 
 ## 3. Résultats de performance
+
+### Résultats globaux relevés
 | Indicateur | Llama 3.2 | Qwen 0.5B |
 | :--- | :--- | :--- |
 | Temps de réponse | 21,20 s | **3,04 s** |
 | Temps du premier token (TTFT) | 7,45 s | **2,02 s** |
 | Nombre de tokens générés | 512 | 173 |
 | Vitesse de génération | 24,16 tokens/s | **56,89 tokens/s** |
+
+### Tableau récapitulatif par question (Q1 à Q5)
+> À compléter avec les mesures expérimentales relevées pour chaque question dans le mode comparaison.
+
+| Question | Modèle | Temps total (s) | TTFT (s) | Tokens | Vitesse (tok/s) | CPU (%) | RAM (%) |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| Q1 (Explication) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
+| Q2 (Raisonnement) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
+| Q3 (Code Python) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
+| Q4 (Synthèse) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
+| Q5 (Traduction) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
 
 Qwen 0.5B présente un temps de réponse environ sept fois plus faible et une vitesse de génération
 environ 2,35 fois supérieure à celles de Llama 3.2, selon les mesures globales relevées.
