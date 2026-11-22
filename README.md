@@ -94,8 +94,19 @@ Des mécanismes assurent la stabilité et le confort d'utilisation :
 
 ---
 
-## 8. Lancement de l'application
+## 8. Installation et lancement de l'application
 
+1. Installer les dépendances Python :
+```bash
+pip install -r requirements.txt
+```
+
+2. S'assurer que le service Ollama est démarré :
+```bash
+ollama serve
+```
+
+3. Lancer l'application Streamlit :
 ```bash
 streamlit run app.py
 ```
