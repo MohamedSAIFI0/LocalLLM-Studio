@@ -88,6 +88,20 @@ def get_hardware_usage():
         "gpu": gpu
     }
 
+def update_peak_hardware(peak, current):
+    if peak is None:
+        return current
+    peak["cpu_percent"] = max(peak["cpu_percent"], current["cpu_percent"])
+    peak["ram_percent"] = max(peak["ram_percent"], current["ram_percent"])
+    peak["ram_used_gb"] = max(peak["ram_used_gb"], current["ram_used_gb"])
+    if current["gpu"]["available"]:
+        if not peak["gpu"]["available"]:
+            peak["gpu"] = current["gpu"]
+        else:
+            peak["gpu"]["gpu_util"] = max(peak["gpu"]["gpu_util"], current["gpu"]["gpu_util"])
+            peak["gpu"]["mem_used"] = max(peak["gpu"]["mem_used"], current["gpu"]["mem_used"])
+    return peak
+
 def init_conversation():
     new_id = str(uuid.uuid4())
     conv_number = st.session_state.get("conv_counter", 0) + 1
@@ -281,6 +295,9 @@ if mode == "Mode Conversation":
             start_time = time.time()
             ttft = None
             eval_count = 0
+            eval_duration = 0
+            chunk_count = 0
+            peak_hw = None
 
             with st.spinner("Génération de la réponse en cours..."):
                 try:
@@ -304,9 +321,15 @@ if mode == "Mode Conversation":
                             if ttft is None:
                                 ttft = time.time() - start_time
                             full_response += chunk
+                            chunk_count += 1
                             message_placeholder.markdown(full_response)
-                        if response.get("done") and response.get("eval_count") is not None:
-                            eval_count = response.get("eval_count")
+                            if chunk_count % 15 == 0:
+                                peak_hw = update_peak_hardware(peak_hw, get_hardware_usage())
+                        if response.get("done"):
+                            if response.get("eval_count") is not None:
+                                eval_count = response.get("eval_count")
+                            if response.get("eval_duration") is not None:
+                                eval_duration = response.get("eval_duration")
 
                     end_time = time.time()
                     total_time = end_time - start_time
@@ -314,9 +337,12 @@ if mode == "Mode Conversation":
                         ttft = total_time
                     if eval_count == 0:
                         eval_count = max(1, len(full_response.split()))
-                    speed = eval_count / total_time if total_time > 0 else 0.0
+                    if eval_duration > 0:
+                        speed = eval_count / (eval_duration / 1e9)
+                    else:
+                        speed = eval_count / total_time if total_time > 0 else 0.0
 
-                    hw_exec = get_hardware_usage()
+                    hw_exec = update_peak_hardware(peak_hw, get_hardware_usage())
 
                     message_placeholder.markdown(full_response)
                     metrics_data = {
@@ -516,6 +542,9 @@ else:
             start_time_1 = time.time()
             ttft_1 = None
             eval_count_1 = 0
+            eval_duration_1 = 0
+            chunk_count_1 = 0
+            peak_hw_1 = None
             with st.spinner(f"Génération en cours avec {model_1}..."):
                 try:
                     for response in ollama.chat(
@@ -529,9 +558,15 @@ else:
                             if ttft_1 is None:
                                 ttft_1 = time.time() - start_time_1
                             full_resp_1 += chunk
+                            chunk_count_1 += 1
                             placeholder_1.markdown(full_resp_1)
-                        if response.get("done") and response.get("eval_count") is not None:
-                            eval_count_1 = response.get("eval_count")
+                            if chunk_count_1 % 15 == 0:
+                                peak_hw_1 = update_peak_hardware(peak_hw_1, get_hardware_usage())
+                        if response.get("done"):
+                            if response.get("eval_count") is not None:
+                                eval_count_1 = response.get("eval_count")
+                            if response.get("eval_duration") is not None:
+                                eval_duration_1 = response.get("eval_duration")
 
                     end_time_1 = time.time()
                     total_time_1 = end_time_1 - start_time_1
@@ -539,9 +574,12 @@ else:
                         ttft_1 = total_time_1
                     if eval_count_1 == 0:
                         eval_count_1 = max(1, len(full_resp_1.split()))
-                    speed_1 = eval_count_1 / total_time_1 if total_time_1 > 0 else 0.0
+                    if eval_duration_1 > 0:
+                        speed_1 = eval_count_1 / (eval_duration_1 / 1e9)
+                    else:
+                        speed_1 = eval_count_1 / total_time_1 if total_time_1 > 0 else 0.0
 
-                    hw_exec_1 = get_hardware_usage()
+                    hw_exec_1 = update_peak_hardware(peak_hw_1, get_hardware_usage())
 
                     placeholder_1.markdown(full_resp_1)
                     metrics_1 = {
@@ -571,6 +609,9 @@ else:
             start_time_2 = time.time()
             ttft_2 = None
             eval_count_2 = 0
+            eval_duration_2 = 0
+            chunk_count_2 = 0
+            peak_hw_2 = None
             with st.spinner(f"Génération en cours avec {model_2}..."):
                 try:
                     for response in ollama.chat(
@@ -584,9 +625,15 @@ else:
                             if ttft_2 is None:
                                 ttft_2 = time.time() - start_time_2
                             full_resp_2 += chunk
+                            chunk_count_2 += 1
                             placeholder_2.markdown(full_resp_2)
-                        if response.get("done") and response.get("eval_count") is not None:
-                            eval_count_2 = response.get("eval_count")
+                            if chunk_count_2 % 15 == 0:
+                                peak_hw_2 = update_peak_hardware(peak_hw_2, get_hardware_usage())
+                        if response.get("done"):
+                            if response.get("eval_count") is not None:
+                                eval_count_2 = response.get("eval_count")
+                            if response.get("eval_duration") is not None:
+                                eval_duration_2 = response.get("eval_duration")
 
                     end_time_2 = time.time()
                     total_time_2 = end_time_2 - start_time_2
@@ -594,9 +641,12 @@ else:
                         ttft_2 = total_time_2
                     if eval_count_2 == 0:
                         eval_count_2 = max(1, len(full_resp_2.split()))
-                    speed_2 = eval_count_2 / total_time_2 if total_time_2 > 0 else 0.0
+                    if eval_duration_2 > 0:
+                        speed_2 = eval_count_2 / (eval_duration_2 / 1e9)
+                    else:
+                        speed_2 = eval_count_2 / total_time_2 if total_time_2 > 0 else 0.0
 
-                    hw_exec_2 = get_hardware_usage()
+                    hw_exec_2 = update_peak_hardware(peak_hw_2, get_hardware_usage())
 
                     placeholder_2.markdown(full_resp_2)
                     metrics_2 = {
