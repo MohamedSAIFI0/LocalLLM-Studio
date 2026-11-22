@@ -90,7 +90,8 @@ def get_hardware_usage():
 
 def init_conversation():
     new_id = str(uuid.uuid4())
-    conv_number = len(st.session_state.get("conversations", {})) + 1
+    conv_number = st.session_state.get("conv_counter", 0) + 1
+    st.session_state.conv_counter = conv_number
     return new_id, {
         "title": f"Conversation {conv_number}",
         "messages": [],
@@ -283,9 +284,13 @@ if mode == "Mode Conversation":
 
             with st.spinner("Génération de la réponse en cours..."):
                 try:
+                    ollama_messages = [
+                        {"role": m["role"], "content": m["content"]}
+                        for m in current_messages
+                    ]
                     for response in ollama.chat(
                         model=selected_model,
-                        messages=current_messages,
+                        messages=ollama_messages,
                         options={
                             "temperature": temperature,
                             "top_k": top_k,
@@ -552,9 +557,10 @@ else:
                 except Exception as e:
                     err_msg = str(e)
                     if "ConnectError" in type(e).__name__ or "10013" in err_msg or "10061" in err_msg:
-                        placeholder_1.error("Erreur de connexion : le service Ollama est inaccessible.")
+                        full_resp_1 = "**Erreur de connexion :** le service Ollama est inaccessible."
                     else:
-                        placeholder_1.error(f"Erreur {model_1} : {e}")
+                        full_resp_1 = f"**Erreur {model_1} :** {e}"
+                    placeholder_1.error(full_resp_1)
                     metrics_1 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0, "cpu": 0.0, "ram": 0.0, "gpu_util": None, "gpu_mem": None}
 
         with col2:
@@ -606,9 +612,10 @@ else:
                 except Exception as e:
                     err_msg = str(e)
                     if "ConnectError" in type(e).__name__ or "10013" in err_msg or "10061" in err_msg:
-                        placeholder_2.error("Erreur de connexion : le service Ollama est inaccessible.")
+                        full_resp_2 = "**Erreur de connexion :** le service Ollama est inaccessible."
                     else:
-                        placeholder_2.error(f"Erreur {model_2} : {e}")
+                        full_resp_2 = f"**Erreur {model_2} :** {e}"
+                    placeholder_2.error(full_resp_2)
                     metrics_2 = {"total_time": 0.0, "ttft": 0.0, "tokens": 0, "speed": 0.0, "cpu": 0.0, "ram": 0.0, "gpu_util": None, "gpu_mem": None}
 
         st.session_state.comparison_history.append({
