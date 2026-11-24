@@ -1,4 +1,5 @@
 # ENSET Chatbot - Assistant LLM Local
+## Mohamed SAIFI & Mohammed EL HIMAR - II-BDCC3
 
 Application Streamlit permettant d'interagir localement avec des modèles de langage via Ollama, d'administrer plusieurs fils de discussion et de comparer les performances des modèles en temps réel.
 
@@ -155,20 +156,6 @@ Les deux modèles sont évalués à partir des mêmes questions :
 | Temps du premier token (TTFT) | 7,45 s | **2,02 s** |
 | Nombre de tokens générés | 512 | 173 |
 | Vitesse de génération | 24,16 tokens/s | **56,89 tokens/s** |
-
-### Tableau récapitulatif par question (Q1 à Q5)
-> À compléter avec les mesures expérimentales relevées pour chaque question dans le mode comparaison.
-
-| Question | Modèle | Temps total (s) | TTFT (s) | Tokens | Vitesse (tok/s) | CPU (%) | RAM (%) |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Q1 (Explication) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
-| Q2 (Raisonnement) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
-| Q3 (Code Python) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
-| Q4 (Synthèse) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
-| Q5 (Traduction) | Llama 3.2 / Qwen 0.5B | — / — | — / — | — / — | — / — | — / — | — / — |
-
-Qwen 0.5B présente un temps de réponse environ sept fois plus faible et une vitesse de génération
-environ 2,35 fois supérieure à celles de Llama 3.2, selon les mesures globales relevées.
 
 ## 4. Consommation des ressources matérielles
 | Indicateur | Llama 3.2 | Qwen 0.5B |
